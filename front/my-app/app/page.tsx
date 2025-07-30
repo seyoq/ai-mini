@@ -42,6 +42,7 @@ export default function CallInterface() {
   const [isVideoOn, setIsVideoOn] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [transcript, setTranscript] = useState(''); // 음성 텍스트 저장
+const [receivedTranscript, setReceivedTranscript] = useState('');
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -95,17 +96,43 @@ useEffect(() => {
     }
   };
 
-  recognition.onresult = (event: SpeechRecognitionEvent) => {
-    let finalTranscript = '';
+  // recognition.onresult = (event: SpeechRecognitionEvent) => {
+  //   let finalTranscript = '';
 
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcriptChunk = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalTranscript += transcriptChunk + ' ';
-      }
+  //   for (let i = event.resultIndex; i < event.results.length; i++) {
+  //     const transcriptChunk = event.results[i][0].transcript;
+  //     if (event.results[i].isFinal) {
+  //       finalTranscript += transcriptChunk + ' ';
+  //     }
+  //   }
+  //   setTranscript(prev => prev + finalTranscript);
+  // };
+
+
+  recognition.onresult = (event: SpeechRecognitionEvent) => {
+  let finalTranscript = '';
+
+  for (let i = event.resultIndex; i < event.results.length; i++) {
+    const transcriptChunk = event.results[i][0].transcript;
+    if (event.results[i].isFinal) {
+      finalTranscript += transcriptChunk + ' ';
     }
+  }
+
+  if (finalTranscript.trim()) {
     setTranscript(prev => prev + finalTranscript);
-  };
+
+    // 📤 WebSocket 전송
+    if (ws.current && targetId) {
+      ws.current.send(JSON.stringify({
+        type: 'transcript',
+        to: targetId,
+        text: finalTranscript,
+      }));
+    }
+  }
+};
+
 
 try {
   recognition.start();
@@ -151,6 +178,11 @@ try {
             setCallStatus('connected');
           }
           break;
+          case 'transcript':
+  if (message.text) {
+    setReceivedTranscript(prev => prev + message.text + ' ');
+  }
+  break;
       }
     };
 
