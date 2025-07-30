@@ -10,6 +10,28 @@ import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, Signal, Users } from 'lu
 import { toast } from '@/hooks/use-toast';
 
 type CallStatus = 'idle' | 'connecting' | 'connected' | 'calling';
+interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
+  readonly results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  [index: number]: SpeechRecognitionResult;
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  readonly isFinal: boolean;
+  readonly length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  readonly transcript: string;
+  readonly confidence: number;
+}
 
 export default function CallInterface() {
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
@@ -18,12 +40,56 @@ export default function CallInterface() {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+ const [transcript, setTranscript] = useState(''); // 음성 텍스트 저장
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const ws = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    if (!isConnected || !localStreamRef.current) return;
+
+    // SpeechRecognition 지원 여부 체크
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn('이 브라우저는 SpeechRecognition API를 지원하지 않습니다.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ko-KR'; // 한국어
+    recognition.interimResults = true; // 중간 결과도 받기
+    recognition.continuous = true; // 계속 인식
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interimTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcriptChunk = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          setTranscript(prev => prev + transcriptChunk + ' ');
+        } else {
+          interimTranscript += transcriptChunk;
+        }
+      }
+
+      // 필요 시 interimTranscript도 상태로 저장 가능
+    };
+
+    recognition.onerror = (event:any) => {
+      console.error('SpeechRecognition error:', event.error);
+    };
+
+    recognition.start();
+
+    return () => {
+      recognition.stop();
+      recognition.onresult = null;
+      recognition.onerror = null;
+    };
+  }, [isConnected]); // 연결됐을 때만 실행
 
   useEffect(() => {
     if (!userId) return;
@@ -44,15 +110,18 @@ export default function CallInterface() {
         case 'offer':
           await handleOffer(message);
           break;
-        case 'answer':
-          if (peerConnectionRef.current) {
-            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
-          }
-          break;
+       
         case 'ice':
           if (peerConnectionRef.current && message.candidate) {
             await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(message.candidate));
           }
+          case 'answer':
+  if (peerConnectionRef.current) {
+    await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
+    setCallStatus('connected');  // 연결 완료 상태로 변경
+  }
+  
+
           break;
       }
     };
@@ -276,7 +345,16 @@ export default function CallInterface() {
         </Card>
 
         <Separator />
-
+  <Card>
+          <CardHeader>
+            <CardTitle>Transcription</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="min-h-[100px] p-2 border rounded bg-white text-black whitespace-pre-wrap">
+              {transcript || "음성을 인식 중입니다..."}
+            </div>
+          </CardContent>
+        </Card>
         <div className="grid grid-cols-2 gap-4">
           <Card>
             <CardHeader><CardTitle>Local Video</CardTitle></CardHeader>
