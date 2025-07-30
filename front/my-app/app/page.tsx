@@ -185,11 +185,15 @@ try {
       }
     };
 
-    pc.ontrack = (event) => {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = event.streams[0];
-      }
-    };
+   pc.ontrack = (event) => {
+  const stream = event.streams[0];
+  console.log("📡 Remote stream received:", stream);
+  console.log("🎧 Audio tracks:", stream.getAudioTracks());
+  if (remoteVideoRef.current) {
+    remoteVideoRef.current.srcObject = stream;
+  }
+};
+
 
     return pc;
   };
