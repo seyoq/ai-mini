@@ -52,6 +52,9 @@ export default function CallInterface() {
 
 const recognitionRef = useRef<any>(null);
 
+
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+
 useEffect(() => {
   if (!isConnected) return;
 
@@ -185,13 +188,29 @@ try {
       }
     };
 
-   pc.ontrack = (event) => {
+//    pc.ontrack = (event) => {
+//   const stream = event.streams[0];
+//   console.log("📡 Remote stream received:", stream);
+//   console.log("🎧 Audio tracks:", stream.getAudioTracks());
+//   if (remoteVideoRef.current) {
+//     remoteVideoRef.current.srcObject = stream;
+//   }
+// };
+pc.ontrack = (event) => {
   const stream = event.streams[0];
-  console.log("📡 Remote stream received:", stream);
-  console.log("🎧 Audio tracks:", stream.getAudioTracks());
+
+  // 비디오 연결
   if (remoteVideoRef.current) {
     remoteVideoRef.current.srcObject = stream;
   }
+
+  // 오디오 연결
+  if (remoteAudioRef.current) {
+    remoteAudioRef.current.srcObject = stream;
+  }
+
+  console.log("📡 Remote stream received:", stream);
+  console.log("🎧 Audio tracks:", stream.getAudioTracks());
 };
 
 
@@ -285,6 +304,7 @@ try {
 
     setCallStatus('connected');
   };
+
 
   // 통화 종료
   const endCall = () => {
