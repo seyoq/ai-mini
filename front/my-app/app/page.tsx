@@ -6,10 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, Signal, Users } from 'lucide-react';
+import { Phone, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 type CallStatus = 'idle' | 'connecting' | 'connected' | 'calling';
+
 interface SpeechRecognitionEvent extends Event {
   readonly resultIndex: number;
   readonly results: SpeechRecognitionResultList;
@@ -40,59 +41,65 @@ export default function CallInterface() {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
- const [transcript, setTranscript] = useState(''); // 음성 텍스트 저장
+  const [transcript, setTranscript] = useState(''); // 음성 텍스트 저장
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const ws = useRef<WebSocket | null>(null);
+useEffect(() => {
+  if (!isConnected || !localStreamRef.current) return;
 
-  useEffect(() => {
-    if (!isConnected || !localStreamRef.current) return;
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.warn('이 브라우저는 SpeechRecognition API를 지원하지 않습니다.');
+    return;
+  }
 
-    // SpeechRecognition 지원 여부 체크
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      console.warn('이 브라우저는 SpeechRecognition API를 지원하지 않습니다.');
-      return;
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'ko-KR';
+  recognition.interimResults = true;
+  recognition.continuous = true;
+
+  recognition.onstart = () => console.log('[SpeechRecognition] 시작됨');
+  recognition.onend = () => console.log('[SpeechRecognition] 종료됨');
+
+  recognition.onerror = (e: any) => {
+    console.error('[SpeechRecognition] 에러:', e.error);
+  };
+
+  recognition.onresult = (event: SpeechRecognitionEvent) => {
+    let interimTranscript = '';
+    let finalTranscript = '';
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcriptChunk = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        finalTranscript += transcriptChunk + ' ';
+        console.log(`[음성인식 - 최종]: ${transcriptChunk}`);  // 최종 결과만 로그
+      } else {
+        interimTranscript += transcriptChunk;
+        console.log(`[음성인식 - 중간]: ${transcriptChunk}`);  // 중간 결과도 로그
+      }
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ko-KR'; // 한국어
-    recognition.interimResults = true; // 중간 결과도 받기
-    recognition.continuous = true; // 계속 인식
+    // 상태에 최종 텍스트 누적 저장
+    setTranscript(prev => prev + finalTranscript);
+  };
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let interimTranscript = '';
+  recognition.start();
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcriptChunk = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          setTranscript(prev => prev + transcriptChunk + ' ');
-        } else {
-          interimTranscript += transcriptChunk;
-        }
-      }
+  return () => {
+    recognition.stop();
+    recognition.onresult = null;
+    recognition.onerror = null;
+  };
+}, [isConnected]);
 
-      // 필요 시 interimTranscript도 상태로 저장 가능
-    };
-
-    recognition.onerror = (event:any) => {
-      console.error('SpeechRecognition error:', event.error);
-    };
-
-    recognition.start();
-
-    return () => {
-      recognition.stop();
-      recognition.onresult = null;
-      recognition.onerror = null;
-    };
-  }, [isConnected]); // 연결됐을 때만 실행
-
+  // WebSocket 연결
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || ws.current) return;
 
     ws.current = new WebSocket(`wss://3cfdedc35589.ngrok-free.app/ws/${userId}`);
 
@@ -110,19 +117,16 @@ export default function CallInterface() {
         case 'offer':
           await handleOffer(message);
           break;
-       
         case 'ice':
           if (peerConnectionRef.current && message.candidate) {
             await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(message.candidate));
           }
-          break
-          case 'answer':
-  if (peerConnectionRef.current) {
-    await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
-    setCallStatus('connected');  // 연결 완료 상태로 변경
-  }
-  
-
+          break;
+        case 'answer':
+          if (peerConnectionRef.current) {
+            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
+            setCallStatus('connected');
+          }
           break;
       }
     };
@@ -139,14 +143,15 @@ export default function CallInterface() {
     };
   }, [userId]);
 
+  // 컴포넌트 언마운트 시 리소스 정리
   useEffect(() => {
     return () => {
-      // 컴포넌트 언마운트 시 미디어 및 연결 정리
       localStreamRef.current?.getTracks().forEach(t => t.stop());
       peerConnectionRef.current?.close();
     };
   }, []);
 
+  // PeerConnection 생성
   const createPeerConnection = () => {
     const pc = new RTCPeerConnection();
 
@@ -169,6 +174,7 @@ export default function CallInterface() {
     return pc;
   };
 
+  // 로컬 미디어 스트림 가져오기
   const startLocalStream = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideoOn });
@@ -178,7 +184,8 @@ export default function CallInterface() {
         localVideoRef.current.srcObject = stream;
       }
 
-      // 음성 볼륨 로그용 AudioContext
+      // 음성 볼륨 로그용 AudioContext (필요시 사용)
+      /*
       const audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
@@ -189,10 +196,11 @@ export default function CallInterface() {
       const logVolume = () => {
         analyser.getByteFrequencyData(dataArray);
         const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-        console.log("🎙️ 현재 음성 레벨:", avg.toFixed(2));
+        // console.log("🎙️ 현재 음성 레벨:", avg.toFixed(2));
         requestAnimationFrame(logVolume);
       };
       logVolume();
+      */
 
       toast({ title: "Media Ready", description: "Camera and microphone access granted." });
       return stream;
@@ -202,6 +210,7 @@ export default function CallInterface() {
     }
   };
 
+  // 호출 시작
   const call = async () => {
     if (!ws.current || !targetId) return;
 
@@ -227,6 +236,7 @@ export default function CallInterface() {
     setCallStatus('calling');
   };
 
+  // offer 처리 및 answer 생성
   const handleOffer = async (message: any) => {
     setCallStatus('connecting');
 
@@ -245,13 +255,14 @@ export default function CallInterface() {
 
     ws.current?.send(JSON.stringify({
       type: 'answer',
-      to: message.from || userId, // from이 없으면 자기 자신
+      to: message.from || userId,
       sdp: answer,
     }));
 
     setCallStatus('connected');
   };
 
+  // 통화 종료
   const endCall = () => {
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
@@ -266,6 +277,7 @@ export default function CallInterface() {
     toast({ title: "Call Ended", description: "통화가 종료되었습니다." });
   };
 
+  // 마이크 음소거 토글
   const toggleMute = () => {
     if (!localStreamRef.current) return;
     const audioTrack = localStreamRef.current.getAudioTracks()[0];
@@ -275,6 +287,7 @@ export default function CallInterface() {
     setIsMuted(!audioTrack.enabled);
   };
 
+  // 비디오 토글
   const toggleVideo = () => {
     if (!localStreamRef.current) return;
     const videoTrack = localStreamRef.current.getVideoTracks()[0];
@@ -284,6 +297,7 @@ export default function CallInterface() {
     setIsVideoOn(videoTrack.enabled);
   };
 
+  // 상태별 배지 색상
   const getStatusColor = () => {
     switch (callStatus) {
       case 'connected': return 'bg-green-600 text-white';
@@ -346,7 +360,8 @@ export default function CallInterface() {
         </Card>
 
         <Separator />
-  <Card>
+
+        <Card>
           <CardHeader>
             <CardTitle>Transcription</CardTitle>
           </CardHeader>
@@ -356,6 +371,7 @@ export default function CallInterface() {
             </div>
           </CardContent>
         </Card>
+
         <div className="grid grid-cols-2 gap-4">
           <Card>
             <CardHeader><CardTitle>Local Video</CardTitle></CardHeader>
@@ -380,6 +396,7 @@ export default function CallInterface() {
             {isVideoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
           </Button>
         </div>
+
       </div>
     </div>
   );
