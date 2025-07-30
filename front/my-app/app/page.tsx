@@ -48,8 +48,12 @@ export default function CallInterface() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const ws = useRef<WebSocket | null>(null);
+
+
+const recognitionRef = useRef<any>(null);
+
 useEffect(() => {
-  if (!isConnected || !localStreamRef.current) return;
+  if (!isConnected) return;
 
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -57,45 +61,61 @@ useEffect(() => {
     return;
   }
 
-  const recognition = new SpeechRecognition();
+  if (!recognitionRef.current) {
+    recognitionRef.current = new SpeechRecognition();
+  }
+
+  const recognition = recognitionRef.current;
+
   recognition.lang = 'ko-KR';
   recognition.interimResults = true;
   recognition.continuous = true;
 
   recognition.onstart = () => console.log('[SpeechRecognition] 시작됨');
-  recognition.onend = () => console.log('[SpeechRecognition] 종료됨');
+
+  recognition.onend = () => {
+    console.log('[SpeechRecognition] 종료됨, 1초 후 다시 시작 시도');
+    setTimeout(() => {
+      try {
+        recognition.start();
+      } catch (error) {
+        console.error('[SpeechRecognition] 재시작 에러:', error);
+      }
+    }, 1000);
+  };
 
   recognition.onerror = (e: any) => {
     console.error('[SpeechRecognition] 에러:', e.error);
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      console.warn('마이크 권한 거부됨, 인식 중지');
+      recognition.stop();
+    }
   };
 
   recognition.onresult = (event: SpeechRecognitionEvent) => {
-    let interimTranscript = '';
     let finalTranscript = '';
 
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const transcriptChunk = event.results[i][0].transcript;
       if (event.results[i].isFinal) {
         finalTranscript += transcriptChunk + ' ';
-        console.log(`[음성인식 - 최종]: ${transcriptChunk}`);  // 최종 결과만 로그
-      } else {
-        interimTranscript += transcriptChunk;
-        console.log(`[음성인식 - 중간]: ${transcriptChunk}`);  // 중간 결과도 로그
       }
     }
-
-    // 상태에 최종 텍스트 누적 저장
     setTranscript(prev => prev + finalTranscript);
   };
 
+try {
   recognition.start();
+} catch (e) {
+  console.error('[SpeechRecognition] start 실패:', e);
+}
+
 
   return () => {
     recognition.stop();
-    recognition.onresult = null;
-    recognition.onerror = null;
   };
 }, [isConnected]);
+
 
   // WebSocket 연결
   useEffect(() => {
