@@ -354,6 +354,7 @@ pc.ontrack = (event) => {
   return (
     <div className="min-h-screen p-6 bg-gray-50">
       <div className="max-w-5xl mx-auto space-y-6">
+<audio ref={remoteAudioRef} autoPlay />
 
         <Card>
           <CardHeader className="flex justify-between items-center">
