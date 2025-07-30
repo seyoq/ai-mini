@@ -115,6 +115,7 @@ export default function CallInterface() {
           if (peerConnectionRef.current && message.candidate) {
             await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(message.candidate));
           }
+          break
           case 'answer':
   if (peerConnectionRef.current) {
     await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(message.sdp));
