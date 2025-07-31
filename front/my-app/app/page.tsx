@@ -122,6 +122,7 @@ const recognitionRef = useRef<any>(null);
         const message = {
           type: 'transcript',
           to: targetId,
+          from: userId,
           text: finalTranscript,
         };
         console.log('📤 전송할 transcript 메시지:', message);
