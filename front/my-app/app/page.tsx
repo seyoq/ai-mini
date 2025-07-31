@@ -70,11 +70,7 @@ useEffect(() => {
   }
 
   const recognition = recognitionRef.current;
-try {
-  recognition.start();
-} catch (e) {
-  console.error('[SpeechRecognition] start 실패:', e);
-}
+
   recognition.lang = 'ko-KR';
   recognition.interimResults = true;
   recognition.continuous = true;
@@ -100,6 +96,19 @@ try {
     }
   };
 
+  // recognition.onresult = (event: SpeechRecognitionEvent) => {
+  //   let finalTranscript = '';
+
+  //   for (let i = event.resultIndex; i < event.results.length; i++) {
+  //     const transcriptChunk = event.results[i][0].transcript;
+  //     if (event.results[i].isFinal) {
+  //       finalTranscript += transcriptChunk + ' ';
+  //     }
+  //   }
+  //   setTranscript(prev => prev + finalTranscript);
+  // };
+
+
   recognition.onresult = (event: SpeechRecognitionEvent) => {
   let finalTranscript = '';
 
@@ -111,16 +120,10 @@ try {
   }
 
   if (finalTranscript.trim()) {
-    console.log('🎙️ 인식된 음성:', finalTranscript);
+    setTranscript(prev => prev + finalTranscript);
 
-    // 📤 WebSocket 전송 로그
+    // 📤 WebSocket 전송
     if (ws.current && targetId) {
-      console.log('📤 전송할 transcript 메시지:', {
-        type: 'transcript',
-        to: targetId,
-        text: finalTranscript,
-      });
-
       ws.current.send(JSON.stringify({
         type: 'transcript',
         to: targetId,
@@ -131,7 +134,11 @@ try {
 };
 
 
-
+try {
+  recognition.start();
+} catch (e) {
+  console.error('[SpeechRecognition] start 실패:', e);
+}
 
 
   return () => {
@@ -171,16 +178,11 @@ try {
             setCallStatus('connected');
           }
           break;
-           case 'transcript':
-      console.log('📥 transcript 메시지 수신됨:', message.text);
-      if (message.text) {
-        setReceivedTranscript(prev => {
-          const updated = prev + message.text + ' ';
-          console.log('🖊️ 화면에 표시할 receivedTranscript:', updated);
-          return updated;
-        });
-      }
-      break;
+          case 'transcript':
+  if (message.text) {
+    setReceivedTranscript(prev => prev + message.text + ' ');
+  }
+  break;
       }
     };
 
