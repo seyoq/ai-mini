@@ -70,7 +70,11 @@ useEffect(() => {
   }
 
   const recognition = recognitionRef.current;
-
+try {
+  recognition.start();
+} catch (e) {
+  console.error('[SpeechRecognition] start 실패:', e);
+}
   recognition.lang = 'ko-KR';
   recognition.interimResults = true;
   recognition.continuous = true;
@@ -127,11 +131,7 @@ useEffect(() => {
 };
 
 
-try {
-  recognition.start();
-} catch (e) {
-  console.error('[SpeechRecognition] start 실패:', e);
-}
+
 
 
   return () => {
