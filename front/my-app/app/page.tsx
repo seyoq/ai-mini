@@ -449,6 +449,29 @@ pc.ontrack = (event) => {
           </CardContent>
         </Card>
 
+        <Card>
+  <CardHeader>
+    <CardTitle>My Speech</CardTitle>
+  </CardHeader>
+  <CardContent>
+    <div className="min-h-[100px] p-2 border rounded bg-white text-black whitespace-pre-wrap">
+      {transcript || "내 음성을 인식 중..."}
+    </div>
+  </CardContent>
+</Card>
+
+<Card>
+  <CardHeader>
+    <CardTitle>Partner's Speech</CardTitle>
+  </CardHeader>
+  <CardContent>
+    <div className="min-h-[100px] p-2 border rounded bg-white text-black whitespace-pre-wrap">
+      {receivedTranscript || "상대방 음성을 기다리는 중..."}
+    </div>
+  </CardContent>
+</Card>
+
+
         <div className="grid grid-cols-2 gap-4">
           <Card>
             <CardHeader><CardTitle>Local Video</CardTitle></CardHeader>
