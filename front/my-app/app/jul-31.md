@@ -57,11 +57,11 @@ const recognitionRef = useRef<any>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
 
 
-  useEffect(() => {
+  
+useEffect(() => {
   if (!isConnected) return;
 
-  const SpeechRecognition =
-    (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   if (!SpeechRecognition) {
     console.warn('이 브라우저는 SpeechRecognition API를 지원하지 않습니다.');
     return;
@@ -72,72 +72,78 @@ const recognitionRef = useRef<any>(null);
   }
 
   const recognition = recognitionRef.current;
-  let isManuallyStopped = false;
 
   recognition.lang = 'ko-KR';
   recognition.interimResults = true;
   recognition.continuous = true;
 
-  recognition.onstart = () => {
-    console.log('[SpeechRecognition] 시작됨');
-  };
+  recognition.onstart = () => console.log('[SpeechRecognition] 시작됨');
 
   recognition.onend = () => {
-    console.log('[SpeechRecognition] 종료됨');
-    if (!isManuallyStopped) {
-      setTimeout(() => {
-        try {
-          console.log('[SpeechRecognition] 재시작 시도');
-          recognition.start();
-        } catch (error) {
-          console.error('[SpeechRecognition] 재시작 실패:', error);
-        }
-      }, 1000);
-    }
+    console.log('[SpeechRecognition] 종료됨, 1초 후 다시 시작 시도');
+    setTimeout(() => {
+      try {
+        recognition.start();
+      } catch (error) {
+        console.error('[SpeechRecognition] 재시작 에러:', error);
+      }
+    }, 1000);
   };
 
   recognition.onerror = (e: any) => {
     console.error('[SpeechRecognition] 에러:', e.error);
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      isManuallyStopped = true;
+      console.warn('마이크 권한 거부됨, 인식 중지');
       recognition.stop();
     }
   };
 
+  // recognition.onresult = (event: SpeechRecognitionEvent) => {
+  //   let finalTranscript = '';
+
+  //   for (let i = event.resultIndex; i < event.results.length; i++) {
+  //     const transcriptChunk = event.results[i][0].transcript;
+  //     if (event.results[i].isFinal) {
+  //       finalTranscript += transcriptChunk + ' ';
+  //     }
+  //   }
+  //   setTranscript(prev => prev + finalTranscript);
+  // };
+
+
   recognition.onresult = (event: SpeechRecognitionEvent) => {
-    let finalTranscript = '';
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const transcriptChunk = event.results[i][0].transcript;
-      if (event.results[i].isFinal) {
-        finalTranscript += transcriptChunk + ' ';
-      }
+  let finalTranscript = '';
+
+  for (let i = event.resultIndex; i < event.results.length; i++) {
+    const transcriptChunk = event.results[i][0].transcript;
+    if (event.results[i].isFinal) {
+      finalTranscript += transcriptChunk + ' ';
     }
-
-    if (finalTranscript.trim()) {
-      console.log('🎙️ 인식된 음성:', finalTranscript);
-
-      setTranscript((prev) => prev + finalTranscript);
-
-      if (ws.current && targetId) {
-        const message = {
-          type: 'transcript',
-          to: targetId,
-          text: finalTranscript,
-        };
-        console.log('📤 전송할 transcript 메시지:', message);
-        ws.current.send(JSON.stringify(message));
-      }
-    }
-  };
-
-  try {
-    recognition.start();
-  } catch (e) {
-    console.error('[SpeechRecognition] start 실패:', e);
   }
 
+  if (finalTranscript.trim()) {
+    setTranscript(prev => prev + finalTranscript);
+
+    // 📤 WebSocket 전송
+    if (ws.current && targetId) {
+      ws.current.send(JSON.stringify({
+        type: 'transcript',
+        to: targetId,
+        text: finalTranscript,
+      }));
+    }
+  }
+};
+
+
+try {
+  recognition.start();
+} catch (e) {
+  console.error('[SpeechRecognition] start 실패:', e);
+}
+
+
   return () => {
-    isManuallyStopped = true;
     recognition.stop();
   };
 }, [isConnected]);
